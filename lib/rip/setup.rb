@@ -12,6 +12,7 @@ module Rip
 
     WEBSITE = "http://hellorip.com/"
     STARTUP_SCRIPTS = %w( .bash_profile .bash_login .bashrc .zshrc .profile .zshenv )
+    FISH_STARTUP_SCRIPT = ".config/fish/config.fish"
 
     __DIR__ = File.expand_path(File.dirname(__FILE__))
 
@@ -25,6 +26,15 @@ module Rip
     # caution: RbConfig::CONFIG['bindir'] does NOT work for me
     # on OS X
     BINDIR = File.join('/', 'usr', 'local', 'bin')
+
+    # Indicates that Rip isn't properly installed.
+    class InstallationError < StandardError; end
+
+    # Indicates that Rip is properly installed, but the current shell
+    # hasn't picked up the installed Rip environment variables yet. The
+    # shell must be restarted for the changes to become effective, or
+    # the shell startup files must be re-sourced.
+    class StaleEnvironmentError < StandardError; end
 
 
     #
@@ -82,7 +92,16 @@ module Rip
       end
     end
 
-    # Not called by default, but runnable with `rip setup`
+    # Modifies the shell startup script(s) and inserts the Rip
+    # configuration statements.
+    #
+    # This is not called by default by 'setup.rb' in the top-level
+    # Rip sources; instead, the user is supposed to run 'rip setup'.
+    #
+    # Returns wheter a startup script has been modified. If one of
+    # the startup scripts already contain the Rip configuration
+    # statements, then nothing will be modified and false will be
+    # returned.
     #
     # TODO: Requires the startup script, but probably acceptable for most? --rue
     #
@@ -97,13 +116,13 @@ module Rip
 
       if File.read(script).include? 'RIPDIR='
         ui.puts "rip: env variables already present in startup script"
-        return false
+        false
       else
         ui.puts "rip: adding env variables to #{script}"
         File.open(script, 'a+') do |f|
           f.puts startup_script_template
         end
-        return true
+        true
       end
     end
 
@@ -148,15 +167,28 @@ module Rip
     end
 
     def startup_script_template
-      STARTUP_SCRIPT_TEMPLATE % RIPDIR
+      (fish? ? FISH_CONFIG_TEMPLATE : STARTUP_SCRIPT_TEMPLATE) % RIPDIR
     end
 
     def startup_script
-      script = STARTUP_SCRIPTS.detect do |script|
+      script = fish_startup_script || STARTUP_SCRIPTS.detect do |script|
         File.exists? file = File.join(HOME, script)
       end
 
       script ? File.join(HOME, script) : ''
+    end
+
+    def startup_script_contains_rip_configuration?
+      filename = startup_script
+      !filename.empty? && File.read(filename).include?(startup_script_template)
+    end
+
+    def fish_startup_script
+      FISH_STARTUP_SCRIPT if fish?
+    end
+
+    def fish?
+      File.exists?(File.join(HOME, FISH_STARTUP_SCRIPT))
     end
 
     def installed?
@@ -168,23 +200,28 @@ module Rip
 
     def check_installation
       if ENV['RIPDIR'].to_s.empty?
-        if startup_script.empty?
-          raise "no $RIPDIR."
+        if startup_script_contains_rip_configuration?
+          raise StaleEnvironmentError,
+                "No $RIPDIR. Rip has already been integrated into your shell startup scripts, " +
+                "but your shell hasn't picked up the changes yet. Please restart your shell for " +
+                "the integration to become effective, or type `source #{startup_script}`."
         else
-          raise "no $RIPDIR. you may need to run `rip setup` and/or `source #{startup_script}`"
+          raise InstallationError,
+                "No $RIPDIR. Rip hasn't been integrated into your shell startup scripts yet; " +
+                "please run `rip setup` to do so."
         end
       end
 
       if !File.exists? File.join(BINDIR, 'rip')
-        raise "no rip in #{BINDIR}"
+        raise InstallationError, "no rip in #{BINDIR}"
       end
 
       if !File.exists? File.join(LIBDIR, 'rip')
-        raise "no rip in #{LIBDIR}"
+        raise InstallationError, "no rip in #{LIBDIR}"
       end
 
       if !File.exists? File.join(LIBDIR, 'rip')
-        raise "no rip.rb in #{LIBDIR}"
+        raise InstallationError, "no rip.rb in #{LIBDIR}"
       end
 
       true
@@ -202,6 +239,14 @@ RIPDIR=%s
 RUBYLIB="$RUBYLIB:$RIPDIR/active/lib"
 PATH="$PATH:$RIPDIR/active/bin"
 export RIPDIR RUBYLIB PATH
+# -- end rip config -- #
+end_template
+
+  FISH_CONFIG_TEMPLATE = <<-end_template
+# -- start rip config -- #
+set -x RIPDIR %s
+set -x RUBYLIB "$RUBYLIB:$RIPDIR/active/lib"
+set PATH $RIPDIR/active/bin $PATH
 # -- end rip config -- #
 end_template
 
