@@ -65,7 +65,7 @@ module Rip
 
       Dir.chdir package.cache_path do
         ui.puts "running install hook for #{package.name}"
-        system "rake -s rip:install >& /dev/null"
+        system "#{rakebin} -s rip:install >& /dev/null"
       end
     end
 
@@ -82,7 +82,7 @@ module Rip
       end
 
       if File.exists? package_bin
-        FileUtils.cp_r package_bin + '/.', dest_bin
+        FileUtils.cp_r package_bin + '/.', dest_bin, :preserve => true
       end
     end
 
@@ -121,6 +121,10 @@ module Rip
           end
         end
       end
+    end
+
+    def rakebin
+      ENV['RAKEBIN'] || 'rake'
     end
 
     def ui

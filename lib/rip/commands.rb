@@ -5,7 +5,7 @@ module Rip
     def invoke(args)
       command, options, args = parse_args(args)
 
-      if [nil, '', '--help', '-h'].include?(command)
+      if command.nil? || command == '' || options[:h] || options[:help]
         command = :help
       end
 
@@ -35,7 +35,7 @@ module Rip
       @next_usage = usage
     end
 
-    def x(help)
+    def x(help = '')
       @help ||= {}
       @next_help ||= []
       @next_help.push help
@@ -73,9 +73,9 @@ module Rip
     end
 
     def parse_args(args)
-      command = args.shift
       options = args.select { |piece| piece =~ /^-/ }
       args   -= options
+      command = args.shift
       options = options.inject({}) do |hash, flag|
         key, value = flag.split('=')
         hash[key.sub(/^--?/,'').intern] = value.nil? ? true : value

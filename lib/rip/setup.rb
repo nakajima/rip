@@ -17,15 +17,23 @@ module Rip
     __DIR__ = File.expand_path(File.dirname(__FILE__))
 
     HOME = File.expand_path('~')
-    USER = HOME.split('/')[-1]
+
+    USER = HOME.split('/')[-1]    # TODO: *cough*
+
+    # Work around Apple's Ruby.
+    #
+    BINDIR = if defined? RUBY_FRAMEWORK_VERSION
+               File.join("/", "usr", "bin")
+             else
+               RbConfig::CONFIG["bindir"]
+             end
+
     LIBDIR = RbConfig::CONFIG['sitelibdir']
+
     RIPDIR = File.expand_path(ENV['RIPDIR'] || File.join(HOME, '.rip'))
     RIPROOT = File.expand_path(File.join(__DIR__, '..', '..'))
     RIPINSTALLDIR = File.join(LIBDIR, 'rip')
 
-    # caution: RbConfig::CONFIG['bindir'] does NOT work for me
-    # on OS X
-    BINDIR = File.join('/', 'usr', 'local', 'bin')
 
     # Indicates that Rip isn't properly installed.
     class InstallationError < StandardError; end
@@ -45,21 +53,23 @@ module Rip
       install_libs
       install_binary
       setup_ripenv
+      setup_startup_script
       finish_setup
     end
 
     def uninstall(verbose = false)
+      FileUtils.rm File.join(BINDIR, 'rip'), :verbose => verbose
       FileUtils.rm_rf RIPINSTALLDIR, :verbose => verbose
       FileUtils.rm_rf File.join(LIBDIR, 'rip.rb'), :verbose => verbose
       FileUtils.rm_rf RIPDIR, :verbose => verbose
-      FileUtils.rm File.join(BINDIR, 'rip'), :verbose => verbose
 
       # just in case...
-      `gem uninstall rip 2&> /dev/null`
+      gembin = ENV['GEMBIN'] || 'gem'
+      `#{gembin} uninstall rip 2&> /dev/null`
 
       ui.abort "rip uninstalled" if verbose
     rescue Errno::EACCES
-      ui.abort "rip: uninstall failed. please try again with `sudo`" if verbose
+      ui.abort "uninstall failed. please try again with `sudo`" if verbose
     rescue Errno::ENOENT
       nil
     rescue => e
@@ -79,7 +89,13 @@ module Rip
       transaction "installing rip binary" do
         src = File.join(RIPROOT, 'bin', 'rip')
         dst = File.join(BINDIR, 'rip')
-        FileUtils.cp src, dst, :verbose => verbose
+        FileUtils.cp src, dst, :verbose => verbose, :preserve => true
+
+        ruby_bin = File.expand_path(File.join(BINDIR, RbConfig::CONFIG['ruby_install_name']))
+        if File.exist? ruby_bin
+          ui.puts "rip: using Ruby bin: #{ruby_bin}"
+          rewrite_bang_line(dst, "#!#{ruby_bin}")
+        end
       end
     end
 
@@ -95,26 +111,26 @@ module Rip
     # Modifies the shell startup script(s) and inserts the Rip
     # configuration statements.
     #
-    # This is not called by default by 'setup.rb' in the top-level
-    # Rip sources; instead, the user is supposed to run 'rip setup'.
-    #
-    # Returns wheter a startup script has been modified. If one of
+    # Returns whether a startup script has been modified. If one of
     # the startup scripts already contain the Rip configuration
     # statements, then nothing will be modified and false will be
     # returned.
     #
     # TODO: Requires the startup script, but probably acceptable for most? --rue
     #
-    def setup_startup_script
-      script = startup_script
-
-      if script.empty?
-        ui.puts "rip: please create one of these startup scripts in $HOME and re-run:"
-        ui.puts STARTUP_SCRIPTS.map { |s| '  ' + s }
-        exit
+    def setup_startup_script(script = nil)
+      if script
+        script = File.expand_path(script)
+      else
+        script = startup_script
       end
 
-      if File.read(script).include? 'RIPDIR='
+      if script.empty? || !File.exists?(script)
+        ui.puts "rip: please create one of these startup scripts in $HOME and re-run:"
+        ui.abort STARTUP_SCRIPTS.map { |s| '  ' + s }
+      end
+
+      if File.read(script).include? 'RIPDIR'
         ui.puts "rip: env variables already present in startup script"
         false
       else
@@ -135,14 +151,11 @@ module Rip
       ****************************************************
       So far so good...
 
-      You should define some environment variables. You can
-      run `rip setup` to automatically insert them into your
-      startup script (#{script}). You need:
+      Rip needs certain env variables to run. We've tried
+      to install them automatically but may have failed.
 
-      #{startup_script_template}
-
-      Run `rip check` after setting up to verify that Rip
-      installed successfully
+      Run `rip check` to check the status of your
+      installation.
 
       Get started: `rip -h` or #{WEBSITE}
 
@@ -201,14 +214,18 @@ module Rip
     def check_installation
       if ENV['RIPDIR'].to_s.empty?
         if startup_script_contains_rip_configuration?
-          raise StaleEnvironmentError,
-                "No $RIPDIR. Rip has already been integrated into your shell startup scripts, " +
-                "but your shell hasn't picked up the changes yet. Please restart your shell for " +
-                "the integration to become effective, or type `source #{startup_script}`."
+          raise StaleEnvironmentError, <<-end_error
+No $RIPDIR. Rip has been integrated into your shell startup scripts but your
+shell hasn't yet picked up the changes.
+
+To complete the installation process please restart your shell or run:
+  source #{startup_script}
+end_error
         else
-          raise InstallationError,
-                "No $RIPDIR. Rip hasn't been integrated into your shell startup scripts yet; " +
-                "please run `rip setup` to do so."
+          raise InstallationError, <<-end_error
+No $RIPDIR. Rip hasn't been integrated into your shell startup scripts yet.
+Please run `rip setup` to do so.
+end_error
         end
       end
 
@@ -225,6 +242,15 @@ module Rip
       end
 
       true
+    end
+
+    def rewrite_bang_line(file, first_line)
+      lines = File.readlines(file)[1..-1]
+      File.open(file, 'w') do |f|
+        f.puts first_line
+        f.puts lines.join("\n")
+        f.flush
+      end
     end
 
     def ui
