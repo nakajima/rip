@@ -13,6 +13,10 @@ context 'Installing from a directory' do
     assert File.exists?(libpath), 'simple_d.rb should be installed'
   end
 
+  test "excludes version from name" do
+    assert_equal 'simple_d', fresh_local_dir('simple_d-1.2').name
+  end
+
   test "finds version from name suffix" do
     assert_equal '1.2', fresh_local_dir('simple_d-1.2').version
     assert_equal '1.2.3', fresh_local_dir('simple_d-1.2.3').version

@@ -17,11 +17,11 @@ module Rip
 
     memoize :name
     def name
-      File.basename(source)
+      filename.gsub(/-((?:\d+\.?)+\d+)\.rb$/, '.rb')
     end
 
     def version
-      if name.match(/-((?:\d+\.?)+\d+)\.rb$/)
+      if filename.match(/-((?:\d+\.?)+\d+)\.rb$/)
         $1
       else
         Date.today.to_s
@@ -59,6 +59,12 @@ module Rip
           FileUtils.cp File.join(cache_path, name), file
         end
       end
+    end
+
+    private
+
+    def filename
+      File.basename(source)
     end
   end
 end

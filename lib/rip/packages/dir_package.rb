@@ -15,11 +15,11 @@ module Rip
 
     memoize :name
     def name
-      File.basename(source)
+      path.gsub(/-((?:\d+\.?)+\d+)$/, '')
     end
 
     def version
-      if name.match(/-((?:\d+\.?)+\d+)$/)
+      if path.match(/-((?:\d+\.?)+\d+)$/)
         $1
       else
         "unversioned"
@@ -29,6 +29,12 @@ module Rip
     def fetch!
       FileUtils.rm_rf cache_path
       FileUtils.cp_r "#{source}/.", cache_path
+    end
+
+    private
+
+    def path
+      File.basename(source)
     end
   end
 end

@@ -10,13 +10,17 @@ context 'Installing from a FilePackage' do
   test "installs the lib files" do
     Rip::Commands.install({}, @source)
 
-    libpath = Rip.dir + '/active/lib/simple-file-3.2.1.rb'
-    assert File.exists?(libpath), 'simple-file-3.2.1.rb should be installed'
+    libpath = Rip.dir + '/active/lib/simple-file.rb'
+    assert File.exists?(libpath), 'simple-file.rb should be installed'
   end
 
   test "fetching into cache_path" do
     @package.fetch!
     assert File.exists?(File.join(@package.cache_path, @package.name)), 'should fetch package and put in local cache'
+  end
+
+  test "excludes version from name" do
+    assert_equal 'simple-file.rb', fresh_local_file('simple-file-1.2.3.rb').name
   end
 
   test "finds version from name suffix" do

@@ -26,11 +26,10 @@ context 'Installing from a local git repo' do
   teardown do
     Rip::GitPackage.unmock_git
   end
-  
+
   test 'local installs the lib files' do
     Rip::Commands.install({}, @sources)
     libpath = Rip.dir + '/active/lib/simple_c.rb'
     assert File.exists?(libpath), 'simple_c.rb should be installed'
   end
 end
-
